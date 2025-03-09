@@ -35,15 +35,13 @@ class Trie {
 
   vector<string> extract_keys() const;
 
-  friend Trie* merge_naive(const Trie& trie1, const Trie& trie2);
-  friend Trie* merge_optimal(const Trie& trie1, const Trie& trie2);
+  static Trie* merge_naive(const Trie& trie1, const Trie& trie2);
+  static Trie* merge_naive2(const Trie& trie1, const Trie& trie2);
+  static Trie* merge_efficient(const Trie& trie1, const Trie& trie2);
 
  private:
   TrieImpl *impl_;
 };
-
-Trie* merge_naive(const Trie& trie1, const Trie& trie2);
-Trie* merge_optimal(const Trie& trie1, const Trie& trie2);
 
 }  // namespace louds
 

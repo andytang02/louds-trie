@@ -231,7 +231,9 @@ class TrieImpl {
 
   void extract_keys(uint64_t level_i, uint64_t node_id, string prefix, vector<string> &keys);
 
-  static TrieImpl* merge_optimal(TrieImpl& trie1, TrieImpl &trie2);
+  static TrieImpl* merge_naive2(TrieImpl& trie1, TrieImpl &trie2);
+  static void merge_nodes(TrieImpl& trie1, TrieImpl& trie2, TrieImpl* merged_trie, uint64_t p1, bool valid1, uint64_t p2, bool valid2, uint64_t depth);
+  static TrieImpl* merge_efficient(TrieImpl& trie1, TrieImpl &trie2);
 
  private:
   vector<Level> levels_;
@@ -308,7 +310,7 @@ void TrieImpl::add(const string &key) {
   last_key_ = key;
 }
 
-TrieImpl* TrieImpl::merge_optimal(TrieImpl &trie1, TrieImpl &trie2) {
+TrieImpl* TrieImpl::merge_naive2(TrieImpl &trie1, TrieImpl &trie2) {
   TrieImpl* merged_trie = new TrieImpl(false);
 
   if (trie1.levels_.size() > trie2.levels_.size()) {
@@ -324,24 +326,11 @@ TrieImpl* TrieImpl::merge_optimal(TrieImpl &trie1, TrieImpl &trie2) {
   vector<string> next_prefix2;
 
   for (uint64_t i = 0; i < trie1.levels_.size() - 1; i ++) {
-    // Level &par_level1 = trie1.levels_[i];
-    // Level &par_level2 = trie2.levels_[i];
-
     Level &level1 = trie1.levels_[i+1];
     Level &level2 = trie2.levels_[i+1];
 
     uint64_t j1 = 0;
     uint64_t j2 = 0;
-    
-    for (string &s1: prefix1) {
-      cout << s1 << " ";
-    }
-    cout << endl;
-
-    for (string &s2: prefix2) {
-      cout << s2 << " ";
-    }
-    cout << endl;
 
     while (j1 < prefix1.size() && j2 < prefix2.size()) {
       if (prefix1[j1] == prefix2[j2]) {
@@ -548,16 +537,6 @@ TrieImpl* TrieImpl::merge_optimal(TrieImpl &trie1, TrieImpl &trie2) {
 
     uint64_t j2 = 0;
 
-    for (string &s1: prefix1) {
-      cout << s1 << " ";
-    }
-    cout << endl;
-  
-    for (string &s2: prefix2) {
-      cout << s2 << " ";
-    }
-    cout << endl;
-
     while (j2 < prefix2.size()) {
       uint64_t start = j2 == 0 ? 0 : level2.louds.select(j2 - 1) + 1 - j2;
       uint64_t end = level2.louds.select(j2) - j2;
@@ -586,21 +565,95 @@ TrieImpl* TrieImpl::merge_optimal(TrieImpl &trie1, TrieImpl &trie2) {
     next_prefix2.clear();
   }
 
-  for (string &s1: prefix1) {
-    cout << s1 << " ";
-  }
-  cout << endl;
+  return merged_trie;
+}
 
-  for (string &s2: prefix2) {
-    cout << s2 << " ";
-  }
-  cout << endl;
+void TrieImpl::merge_nodes(TrieImpl& trie1, TrieImpl& trie2, TrieImpl* merged_trie, uint64_t p1, bool valid1, uint64_t p2, bool valid2, uint64_t depth) {
+  // Base case: if depth exceeds either trie's levels, stop
+  if (depth >= merged_trie->levels_.size()) return;
 
-  /*
-  for (uint64_t i = 0; i < merged_trie->levels_[merged_trie->levels_.size() - 2].outs.n_bits; i ++) {
-    merged_trie->levels_[merged_trie->levels_.size() - 1].louds.add(1);
+  Level& level1 = (depth < trie1.levels_.size()) ? trie1.levels_[depth] : trie1.levels_.back();
+  Level& level2 = (depth < trie2.levels_.size()) ? trie2.levels_[depth] : trie2.levels_.back();
+
+  uint64_t i1 = (!valid1 || p1 == 0) ? 0 : level1.louds.select(p1 - 1) + 1 - p1;
+  uint64_t end1 = (!valid1) ? 0 : level1.louds.select(p1) - p1;
+
+  uint64_t i2 = (!valid2 || p2 == 0) ? 0 : level2.louds.select(p2 - 1) + 1 - p2;
+  uint64_t end2 = (!valid2) ? 0 : level2.louds.select(p2) - p2;
+
+  // Merge children
+  while (i1 < end1 || i2 < end2) {
+    if (i1 >= end1) {  // Only trie2 has children left
+      merged_trie->levels_[depth].louds.add(0);
+      merged_trie->levels_[depth].outs.add(level2.outs.get(i2));
+      merged_trie->levels_[depth].labels.push_back(level2.labels[i2]);
+      if (level2.outs.get(i2)) {
+        merged_trie->n_keys_++;
+        merged_trie->levels_[depth + 1].offset++;
+      }
+      merged_trie->n_nodes_++;
+
+      merge_nodes(trie1, trie2, merged_trie, 0, false, i2, true, depth + 1);  // Recurse into trie2
+      i2++;
+    } else if (i2 >= end2) {  // Only trie1 has children left
+      merged_trie->levels_[depth].louds.add(0);
+      merged_trie->levels_[depth].outs.add(level1.outs.get(i1));
+      merged_trie->levels_[depth].labels.push_back(level1.labels[i1]);
+      if (level1.outs.get(i1)) {
+        merged_trie->n_keys_++;
+        merged_trie->levels_[depth + 1].offset++;
+      }
+      merged_trie->n_nodes_++;
+
+      merge_nodes(trie1, trie2, merged_trie, i1, true, 0, false, depth + 1);  // Recurse into trie1
+      i1++;
+    } else if (level1.labels[i1] < level2.labels[i2]) {
+      merged_trie->levels_[depth].louds.add(0);
+      merged_trie->levels_[depth].outs.add(level1.outs.get(i1));
+      merged_trie->levels_[depth].labels.push_back(level1.labels[i1]);
+      if (level1.outs.get(i1)) {
+        merged_trie->n_keys_++;
+        merged_trie->levels_[depth + 1].offset++;
+      }
+      merged_trie->n_nodes_++;
+
+      merge_nodes(trie1, trie2, merged_trie, i1, true, 0, false, depth + 1);  // Recurse into trie1
+      i1++;
+    } else if (level1.labels[i1] > level2.labels[i2]) {
+      merged_trie->levels_[depth].louds.add(0);
+      merged_trie->levels_[depth].outs.add(level2.outs.get(i2));
+      merged_trie->levels_[depth].labels.push_back(level2.labels[i2]);
+      if (level2.outs.get(i2)) {
+        merged_trie->n_keys_++;
+        merged_trie->levels_[depth + 1].offset++;
+      }
+      merged_trie->n_nodes_++;
+
+      merge_nodes(trie1, trie2, merged_trie, 0, false, i2, true, depth + 1);  // Recurse into trie2
+      i2++;
+    } else {  // Labels match
+      merged_trie->levels_[depth].louds.add(0);
+      merged_trie->levels_[depth].outs.add(level1.outs.get(i1) | level2.outs.get(i2));
+      merged_trie->levels_[depth].labels.push_back(level1.labels[i1]);
+      if (level1.outs.get(i1) | level2.outs.get(i2)) {
+        merged_trie->n_keys_++;
+        merged_trie->levels_[depth + 1].offset++;
+      }
+      merged_trie->n_nodes_++;
+
+      merge_nodes(trie1, trie2, merged_trie, i1, true, i2, true, depth + 1);  // Recurse into both
+      i1++;
+      i2++;
+    }
   }
-  */
+  merged_trie->levels_[depth].louds.add(1);  // Mark end of children
+}
+
+TrieImpl* TrieImpl::merge_efficient(TrieImpl& trie1, TrieImpl& trie2) {
+  TrieImpl* merged_trie = new TrieImpl(false);
+  merged_trie->levels_.resize(max(trie1.levels_.size(), trie2.levels_.size()));
+
+  TrieImpl::merge_nodes(trie1, trie2, merged_trie, 0, true, 0, true, 1);
 
   return merged_trie;
 }
@@ -686,8 +739,6 @@ void TrieImpl::extract_keys(uint64_t level_i, uint64_t node_id, string prefix, v
 
   const Level &level = levels_[level_i];
 
-  // uint64_t original_id = node_id;
-
   uint64_t node_pos;
   if (node_id != 0) {
     node_pos = level.louds.select(node_id - 1) + 1;
@@ -710,8 +761,6 @@ void TrieImpl::extract_keys(uint64_t level_i, uint64_t node_id, string prefix, v
   end += Ctz(word);
   uint64_t begin = node_id;
   end = begin + end - node_pos;
-
-  // cout << end << " " << level.louds.select(original_id) - original_id << endl;
 
   for (uint64_t i = begin; i < end; i ++) {
     string next = prefix + (char) level.labels[i];
@@ -764,23 +813,11 @@ vector<string> Trie::extract_keys() const {
   return keys;
 }
 
-Trie* merge_naive(const Trie& trie1, const Trie& trie2) {
+Trie* Trie::merge_naive(const Trie& trie1, const Trie& trie2) {
   Trie* merged_trie = new Trie();
 
   vector<string> keys1 = trie1.extract_keys();
   vector<string> keys2 = trie2.extract_keys();
-
-  /*
-  cout << "TRIE 1" << endl;
-  for (string & s1: keys1) {
-    cout << s1 << endl;
-  }
-
-  cout << "TRIE 2" << endl;
-  for (string & s2: keys2) {
-    cout << s2 << endl;
-  }
-  */
 
   uint64_t i = 0;
   uint64_t j = 0;
@@ -822,15 +859,21 @@ Trie* merge_naive(const Trie& trie1, const Trie& trie2) {
     }
   }
 
-  // merged_trie->build();
-
   return merged_trie;
 } 
 
-Trie* merge_optimal(const Trie& trie1, const Trie& trie2) {
+Trie* Trie::merge_naive2(const Trie& trie1, const Trie& trie2) {
   Trie* merged_trie = new Trie();
 
-  merged_trie->impl_ = TrieImpl::merge_optimal(*trie1.impl_,*trie2.impl_);
+  merged_trie->impl_ = TrieImpl::merge_naive2(*trie1.impl_,*trie2.impl_);
+
+  return merged_trie;
+}
+
+Trie* Trie::merge_efficient(const Trie& trie1, const Trie& trie2) {
+  Trie* merged_trie = new Trie();
+
+  merged_trie->impl_ = TrieImpl::merge_efficient(*trie1.impl_,*trie2.impl_);
 
   return merged_trie;
 }
