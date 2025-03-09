@@ -33,7 +33,7 @@ class Trie {
 
   void print();
 
-  // void extract_keys(Level &level, uint64_t node_id, string &prefix, vector<string> &keys);
+  vector<string> extract_keys() const;
 
  private:
   TrieImpl *impl_;

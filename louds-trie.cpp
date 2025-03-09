@@ -226,6 +226,8 @@ class TrieImpl {
 
   void print();
 
+  void extract_keys(uint64_t level_i, uint64_t node_id, string prefix, vector<string> &keys);
+
  private:
   vector<Level> levels_;
   uint64_t n_keys_;
@@ -362,6 +364,45 @@ int64_t TrieImpl::lookup(const string &query) const {
   return level.offset + level.outs.rank(node_id);
 }
 
+void TrieImpl::extract_keys(uint64_t level_i, uint64_t node_id, string prefix, vector<string> &keys) {
+  if (prefix.length() >= levels_.size() - 2) {
+    return;
+  }
+
+  const Level &level = levels_[level_i];
+
+  uint64_t node_pos;
+  if (node_id != 0) {
+    node_pos = level.louds.select(node_id - 1) + 1;
+    node_id = node_pos - node_id;
+  } else {
+    node_pos = 0;
+  }
+
+  // Caculate [begin, end) of children
+  uint64_t end = node_pos;
+  uint64_t word = level.louds.words[end / 64] >> (end % 64);
+  if (word == 0) {
+    end += 64 - (end % 64);
+    word = level.louds.words[end / 64];
+    while (word == 0) {
+      end += 64;
+      word = level.louds.words[end / 64];
+    }
+  }
+  end += Ctz(word);
+  uint64_t begin = node_id;
+  end = begin + end - node_pos;
+
+  for (uint64_t i = begin; i < end; i ++) {
+    string next = prefix + (char) level.labels[i];
+    if (level.outs.get(i) == 1) {
+      keys.push_back(next);
+    }
+    extract_keys(level_i + 1, i, next, keys);
+  }
+}
+
 Trie::Trie() : impl_(new TrieImpl) {}
 
 Trie::~Trie() {
@@ -396,83 +437,74 @@ void Trie::print() {
   impl_->print();
 }
 
-/*
-Trie merge(const Trie& trie1, const Trie& trie2) {
-  // Create a new trie for the merged result
-  Trie result;
-  
-  // Vector to store all keys from both tries
-  vector<string> all_keys;
-  
-  // Function to extract keys from a trie
-  auto extract_keys = [&](const Trie& trie) {
-      // Start from root (node_id = 0 at level 1)
-      vector<pair<string, uint64_t>> stack;
-      string current_key;
-      
-      // For each level, we need to traverse the trie
-      for (uint64_t level = 1; level < trie.impl_->levels_.size(); ++level) {
-          const Level& curr_level = trie.impl_->levels_[level];
-          if (level == 1) {
-              // Initial push of all children of root
-              uint64_t node_id = 0;
-              uint64_t node_pos = 0;
-              while (node_pos < curr_level.louds.n_bits && 
-                     !curr_level.louds.get(node_pos)) {
-                  stack.push_back({string(1, curr_level.labels[node_id]), node_id});
-                  node_pos++;
-                  node_id++;
-              }
-          }
-          
-          while (!stack.empty()) {
-              auto [prefix, parent_id] = stack.back();
-              stack.pop_back();
-              
-              // Check if this is a terminal node
-              if (level < trie.impl_->levels_.size() - 1 && 
-                  trie.impl_->levels_[level].outs.get(parent_id)) {
-                  all_keys.push_back(prefix);
-              }
-              
-              // Only continue if there are more levels and this node has children
-              if (level + 1 < trie.impl_->levels_.size()) {
-                  const Level& next_level = trie.impl_->levels_[level + 1];
-                  uint64_t child_pos = parent_id == 0 ? 0 : 
-                                      next_level.louds.select(parent_id - 1) + 1;
-                  uint64_t child_id = child_pos - parent_id;
-                  
-                  while (child_pos < next_level.louds.n_bits && 
-                         !next_level.louds.get(child_pos)) {
-                      string new_prefix = prefix + next_level.labels[child_id];
-                      stack.push_back({new_prefix, child_id});
-                      child_pos++;
-                      child_id++;
-                  }
-              }
-          }
-      }
-  };
-  
-  // Extract keys from both tries
-  extract_keys(trie1);
-  extract_keys(trie2);
-  
-  // Sort and remove duplicates
-  sort(all_keys.begin(), all_keys.end());
-  all_keys.erase(unique(all_keys.begin(), all_keys.end()), all_keys.end());
-  
-  // Add all keys to the new trie in order
-  for (const string& key : all_keys) {
-      result.add(key);
-  }
-  
-  // Build the final trie structure
-  result.build();
-  
-  return result;
+vector<string> Trie::extract_keys() const {
+  vector<string> keys;
+
+  impl_->extract_keys(1, 0, "", keys);
+
+  return keys;
 }
-*/
+
+Trie* merge(const Trie& trie1, const Trie& trie2) {
+  Trie* merged_trie = new Trie();
+
+  vector<string> keys1 = trie1.extract_keys();
+  vector<string> keys2 = trie2.extract_keys();
+
+  cout << "TRIE 1" << endl;
+  for (string & s1: keys1) {
+    cout << s1 << endl;
+  }
+
+  cout << "TRIE 2" << endl;
+  for (string & s2: keys2) {
+    cout << s2 << endl;
+  }
+
+  uint64_t i = 0;
+  uint64_t j = 0;
+  string last_string = "";
+
+  while (i < keys1.size() && j < keys2.size()) {
+    if (keys1[i] < keys2[j]) {
+      if (keys1[i] == last_string) {
+        i ++;
+      } else {
+        last_string = keys1[i ++];
+        merged_trie->add(last_string);
+      }
+    } else {
+      if (keys2[j] == last_string) {
+        j ++;
+      } else {
+        last_string = keys2[j ++];
+        merged_trie->add(last_string);
+      }
+    }
+  }
+
+  while (i < keys1.size()) {
+    if (keys1[i] == last_string) {
+      i ++;
+    } else {
+      last_string = keys1[i ++];
+      merged_trie->add(last_string);
+    }
+  }
+
+  while (j < keys2.size()) {
+    if (keys2[j] == last_string) {
+      j ++;
+    } else {
+      last_string = keys2[j ++];
+      merged_trie->add(last_string);
+    }
+  }
+
+  merged_trie->build();
+
+  return merged_trie;
+} 
 
 }  // namespace louds
 
@@ -488,9 +520,10 @@ using namespace std;
 using namespace std::chrono;
 
 int main() {
+  /*
   louds::Trie trie;
 
-  vector<string> keys = {"car", "cat", "cap", "cot", "cop", "bap", "bat"};
+  vector<string> keys = {"car", "cat", "cap", "cot", "cop", "bap", "bat", "ba"};
 
   sort(keys.begin(), keys.end());
 
@@ -501,4 +534,40 @@ int main() {
   trie.build();
 
   trie.print();
+
+  vector<string> extracted_keys = trie.extract_keys();
+
+  for (string &s: extracted_keys) {
+    cout << s << endl;
+  }
+  */
+
+  louds::Trie trie1;
+  vector<string> keys1 = {"b", "ba", "bat", "bar"};
+  sort(keys1.begin(), keys1.end());
+
+  for(auto & key: keys1) {
+    trie1.add(key);
+  }
+
+  trie1.build();
+
+  louds::Trie trie2;
+  vector<string> keys2 = {"c", "ca", "cat", "ba", "car"};
+  sort(keys2.begin(), keys2.end());
+
+  for(auto & key: keys2) {
+    trie2.add(key);
+  }
+
+  trie2.build();
+
+  louds::Trie* trie3 = louds::merge(trie1, trie2);
+
+  vector<string> extracted_keys = trie3->extract_keys();
+
+  cout << "MERGED TRIE" << endl;
+  for (string &s: extracted_keys) {
+    cout << s << endl;
+  }
 }
