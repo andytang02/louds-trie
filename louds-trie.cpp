@@ -9,6 +9,10 @@
 
 #include <cassert>
 #include <vector>
+#include <iostream>
+#include <bitset>
+#include <cstdint>
+#include <string>
 
 namespace louds {
 namespace {
@@ -172,13 +176,34 @@ struct Level {
   Level() : louds(), outs(), labels(), offset(0) {}
 
   uint64_t size() const;
+
+  void print();
 };
+
+void Level::print() {
+  cout << louds.n_bits << endl;
+  for (uint64_t x: louds.words) {
+    bitset<64> b(x);
+    cout << b << " " << endl;
+  }
+
+  cout << outs.n_bits << endl;
+  for (uint64_t x: outs.words) {
+    bitset<64> b(x);
+    cout << b << " " << endl;
+  }
+
+  for (uint8_t l: labels) {
+    cout << (char) l << " ";
+  }
+  cout << endl;
+}
 
 uint64_t Level::size() const {
   return louds.size() + outs.size() + labels.size();
 }
 
-}  // namespace
+} // namespace
 
 class TrieImpl {
  public:
@@ -199,6 +224,8 @@ class TrieImpl {
     return size_;
   }
 
+  void print();
+
  private:
   vector<Level> levels_;
   uint64_t n_keys_;
@@ -206,6 +233,12 @@ class TrieImpl {
   uint64_t size_;
   string last_key_;
 };
+
+void TrieImpl::print() {
+  for (auto &l: levels_) {
+    l.print();
+  }
+}
 
 TrieImpl::TrieImpl()
   : levels_(2), n_keys_(0), n_nodes_(1), size_(0), last_key_() {
@@ -359,4 +392,113 @@ uint64_t Trie::size() const {
   return impl_->size();
 }
 
+void Trie::print() {
+  impl_->print();
+}
+
+/*
+Trie merge(const Trie& trie1, const Trie& trie2) {
+  // Create a new trie for the merged result
+  Trie result;
+  
+  // Vector to store all keys from both tries
+  vector<string> all_keys;
+  
+  // Function to extract keys from a trie
+  auto extract_keys = [&](const Trie& trie) {
+      // Start from root (node_id = 0 at level 1)
+      vector<pair<string, uint64_t>> stack;
+      string current_key;
+      
+      // For each level, we need to traverse the trie
+      for (uint64_t level = 1; level < trie.impl_->levels_.size(); ++level) {
+          const Level& curr_level = trie.impl_->levels_[level];
+          if (level == 1) {
+              // Initial push of all children of root
+              uint64_t node_id = 0;
+              uint64_t node_pos = 0;
+              while (node_pos < curr_level.louds.n_bits && 
+                     !curr_level.louds.get(node_pos)) {
+                  stack.push_back({string(1, curr_level.labels[node_id]), node_id});
+                  node_pos++;
+                  node_id++;
+              }
+          }
+          
+          while (!stack.empty()) {
+              auto [prefix, parent_id] = stack.back();
+              stack.pop_back();
+              
+              // Check if this is a terminal node
+              if (level < trie.impl_->levels_.size() - 1 && 
+                  trie.impl_->levels_[level].outs.get(parent_id)) {
+                  all_keys.push_back(prefix);
+              }
+              
+              // Only continue if there are more levels and this node has children
+              if (level + 1 < trie.impl_->levels_.size()) {
+                  const Level& next_level = trie.impl_->levels_[level + 1];
+                  uint64_t child_pos = parent_id == 0 ? 0 : 
+                                      next_level.louds.select(parent_id - 1) + 1;
+                  uint64_t child_id = child_pos - parent_id;
+                  
+                  while (child_pos < next_level.louds.n_bits && 
+                         !next_level.louds.get(child_pos)) {
+                      string new_prefix = prefix + next_level.labels[child_id];
+                      stack.push_back({new_prefix, child_id});
+                      child_pos++;
+                      child_id++;
+                  }
+              }
+          }
+      }
+  };
+  
+  // Extract keys from both tries
+  extract_keys(trie1);
+  extract_keys(trie2);
+  
+  // Sort and remove duplicates
+  sort(all_keys.begin(), all_keys.end());
+  all_keys.erase(unique(all_keys.begin(), all_keys.end()), all_keys.end());
+  
+  // Add all keys to the new trie in order
+  for (const string& key : all_keys) {
+      result.add(key);
+  }
+  
+  // Build the final trie structure
+  result.build();
+  
+  return result;
+}
+*/
+
 }  // namespace louds
+
+#include <algorithm>
+#include <cassert>
+#include <chrono>
+#include <iostream>
+#include <vector>
+
+// #include "louds-trie.hpp"
+
+using namespace std;
+using namespace std::chrono;
+
+int main() {
+  louds::Trie trie;
+
+  vector<string> keys = {"car", "cat", "cap", "cot", "cop", "bap", "bat"};
+
+  sort(keys.begin(), keys.end());
+
+  for(auto & key: keys) {
+    trie.add(key);
+  }
+
+  trie.build();
+
+  trie.print();
+}

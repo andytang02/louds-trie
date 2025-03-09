@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace louds {
 
@@ -29,6 +30,10 @@ class Trie {
   uint64_t n_nodes() const;
   // size returns the approximate size of assigned memory.
   uint64_t size() const;
+
+  void print();
+
+  // void extract_keys(Level &level, uint64_t node_id, string &prefix, vector<string> &keys);
 
  private:
   TrieImpl *impl_;
