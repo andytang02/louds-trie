@@ -181,13 +181,13 @@ struct Level {
 };
 
 void Level::print() {
-  cout << louds.n_bits << endl;
+  cout << "Louds Bits: " << louds.n_bits << endl;
   for (uint64_t x: louds.words) {
     bitset<64> b(x);
     cout << b << " " << endl;
   }
 
-  cout << outs.n_bits << endl;
+  cout << "Outs Bits: " << outs.n_bits << endl;
   for (uint64_t x: outs.words) {
     bitset<64> b(x);
     cout << b << " " << endl;
@@ -197,6 +197,8 @@ void Level::print() {
     cout << (char) l << " ";
   }
   cout << endl;
+
+  cout << "Offset: " << offset << endl;
 }
 
 uint64_t Level::size() const {
@@ -208,6 +210,7 @@ uint64_t Level::size() const {
 class TrieImpl {
  public:
   TrieImpl();
+  TrieImpl(bool initialize_first);
   ~TrieImpl() {}
 
   void add(const string &key);
@@ -228,6 +231,8 @@ class TrieImpl {
 
   void extract_keys(uint64_t level_i, uint64_t node_id, string prefix, vector<string> &keys);
 
+  static TrieImpl* merge_optimal(TrieImpl& trie1, TrieImpl &trie2);
+
  private:
   vector<Level> levels_;
   uint64_t n_keys_;
@@ -237,6 +242,8 @@ class TrieImpl {
 };
 
 void TrieImpl::print() {
+  cout << "NUM KEYS: " << n_keys_ << endl;
+  cout << "NUM NODES: " << n_nodes_ << endl;
   for (auto &l: levels_) {
     l.print();
   }
@@ -247,6 +254,17 @@ TrieImpl::TrieImpl()
   levels_[0].louds.add(0);
   levels_[0].louds.add(1);
   levels_[1].louds.add(1);
+  levels_[0].outs.add(0);
+  levels_[0].labels.push_back(' ');
+}
+
+TrieImpl::TrieImpl(bool initialize_first)
+: levels_(2), n_keys_(0), n_nodes_(1), size_(0), last_key_() {
+  levels_[0].louds.add(0);
+  levels_[0].louds.add(1);
+  if (initialize_first) {
+    levels_[1].louds.add(1);
+  }
   levels_[0].outs.add(0);
   levels_[0].labels.push_back(' ');
 }
@@ -288,6 +306,303 @@ void TrieImpl::add(const string &key) {
   levels_[key.length()].outs.set(levels_[key.length()].outs.n_bits - 1, 1);
   ++n_keys_;
   last_key_ = key;
+}
+
+TrieImpl* TrieImpl::merge_optimal(TrieImpl &trie1, TrieImpl &trie2) {
+  TrieImpl* merged_trie = new TrieImpl(false);
+
+  if (trie1.levels_.size() > trie2.levels_.size()) {
+    swap(trie1, trie2);
+  }
+
+  merged_trie->levels_.resize(trie2.levels_.size());
+
+  vector<string> prefix1 = {""};
+  vector<string> prefix2 = {""};
+
+  vector<string> next_prefix1;
+  vector<string> next_prefix2;
+
+  for (uint64_t i = 0; i < trie1.levels_.size() - 1; i ++) {
+    // Level &par_level1 = trie1.levels_[i];
+    // Level &par_level2 = trie2.levels_[i];
+
+    Level &level1 = trie1.levels_[i+1];
+    Level &level2 = trie2.levels_[i+1];
+
+    uint64_t j1 = 0;
+    uint64_t j2 = 0;
+    
+    for (string &s1: prefix1) {
+      cout << s1 << " ";
+    }
+    cout << endl;
+
+    for (string &s2: prefix2) {
+      cout << s2 << " ";
+    }
+    cout << endl;
+
+    while (j1 < prefix1.size() && j2 < prefix2.size()) {
+      if (prefix1[j1] == prefix2[j2]) {
+        uint64_t start1 = j1 == 0 ? 0 : level1.louds.select(j1 - 1) + 1 - j1;
+        uint64_t end1 = level1.louds.select(j1) - j1;
+
+        uint64_t start2 = j2 == 0 ? 0 : level2.louds.select(j2 - 1) + 1 - j2;
+        uint64_t end2 = level2.louds.select(j2) - j2;
+
+        uint64_t k1 = start1;
+        uint64_t k2 = start2;
+
+        // cout << start1 << " " << end1 << endl;
+
+        while (k1 < end1 && k2 < end2) {
+          if (level1.labels[k1] < level2.labels[k2]) {
+            merged_trie->levels_[i+1].louds.add(0);
+            merged_trie->levels_[i+1].outs.add(level1.outs.get(k1));
+            merged_trie->levels_[i+1].labels.push_back(level1.labels[k1]);
+  
+            next_prefix1.push_back(prefix1[j1] + (char) level1.labels[k1]);
+
+            merged_trie->n_nodes_ ++;
+            if (level1.outs.get(k1) == 1) {
+              merged_trie->n_keys_ ++;
+              merged_trie->levels_[i+2].offset ++;
+            }
+
+            k1 ++;
+          }
+          else if(level1.labels[k1] > level2.labels[k2]) {
+            merged_trie->levels_[i+1].louds.add(0);
+            merged_trie->levels_[i+1].outs.add(level2.outs.get(k2));
+            merged_trie->levels_[i+1].labels.push_back(level2.labels[k2]);
+  
+            next_prefix2.push_back(prefix2[j2] + (char) level2.labels[k2]);
+
+            merged_trie->n_nodes_ ++;
+            if (level2.outs.get(k2) == 1) {
+              merged_trie->n_keys_ ++;
+              merged_trie->levels_[i+2].offset ++;
+            }
+
+            k2 ++;
+          }
+          else {
+            merged_trie->levels_[i+1].louds.add(0);
+            merged_trie->levels_[i+1].outs.add(level1.outs.get(k1) | level2.outs.get(k2));
+            merged_trie->levels_[i+1].labels.push_back(level1.labels[k1]);
+
+            next_prefix1.push_back(prefix1[j1] + (char) level1.labels[k1]);
+            next_prefix2.push_back(prefix2[j2] + (char) level2.labels[k2]);
+
+            merged_trie->n_nodes_ ++;
+            if ((level1.outs.get(k1) | level2.outs.get(k2)) == 1) {
+              merged_trie->n_keys_ ++;
+              merged_trie->levels_[i+2].offset ++;
+            }
+
+            k1 ++;
+            k2 ++;
+          }
+        }
+
+        while (k1 < end1) {
+          merged_trie->levels_[i+1].louds.add(0);
+          merged_trie->levels_[i+1].outs.add(level1.outs.get(k1));
+          merged_trie->levels_[i+1].labels.push_back(level1.labels[k1]);
+
+          next_prefix1.push_back(prefix1[j1] + (char) level1.labels[k1]);
+
+          merged_trie->n_nodes_ ++;
+          if (level1.outs.get(k1) == 1) {
+            merged_trie->n_keys_ ++;
+            merged_trie->levels_[i+2].offset ++;
+          }
+
+          k1 ++;
+        }
+
+        while (k2 < end2) {
+          merged_trie->levels_[i+1].louds.add(0);
+          merged_trie->levels_[i+1].outs.add(level2.outs.get(k2));
+          merged_trie->levels_[i+1].labels.push_back(level2.labels[k2]);
+
+          next_prefix2.push_back(prefix2[j2] + (char) level2.labels[k2]);
+          
+          merged_trie->n_nodes_ ++;
+          if (level2.outs.get(k2) == 1) {
+            merged_trie->n_keys_ ++;
+            merged_trie->levels_[i+2].offset ++;
+          }
+
+          k2 ++;
+        }
+
+        merged_trie->levels_[i+1].louds.add(1);
+
+        j1 ++;
+        j2 ++;
+      }
+      else if (prefix1[j1] < prefix2[j2]) {
+        uint64_t start = j1 == 0 ? 0 : level1.louds.select(j1 - 1) + 1 - j1;
+        uint64_t end = level1.louds.select(j1) - j1;
+
+        for (uint64_t k = start; k < end; k ++) {
+          merged_trie->levels_[i+1].louds.add(0);
+          merged_trie->levels_[i+1].outs.add(level1.outs.get(k));
+          merged_trie->levels_[i+1].labels.push_back(level1.labels[k]);
+
+          merged_trie->n_nodes_ ++;
+          if (level1.outs.get(k) == 1) {
+            merged_trie->n_keys_ ++;
+            merged_trie->levels_[i+2].offset ++;
+          }
+
+          next_prefix1.push_back(prefix1[j1] + (char) level1.labels[k]);
+        }
+
+        merged_trie->levels_[i+1].louds.add(1);
+
+        j1 ++;
+      }
+      else {
+        uint64_t start = j2 == 0 ? 0 : level2.louds.select(j2 - 1) + 1 - j2;
+        uint64_t end = level2.louds.select(j2) - j2;
+
+        for (uint64_t k = start; k < end; k ++) {
+          merged_trie->levels_[i+1].louds.add(0);
+          merged_trie->levels_[i+1].outs.add(level2.outs.get(k));
+          merged_trie->levels_[i+1].labels.push_back(level2.labels[k]);
+
+          merged_trie->n_nodes_ ++;
+          if (level2.outs.get(k) == 1) {
+            merged_trie->n_keys_ ++;
+            merged_trie->levels_[i+2].offset ++;
+          }
+
+          next_prefix2.push_back(prefix2[j2] + (char) level2.labels[k]);
+        }
+
+        merged_trie->levels_[i+1].louds.add(1);
+
+        j2 ++;
+      }
+    }
+
+    while (j1 < prefix1.size()) {
+      uint64_t start = j1 == 0 ? 0 : level1.louds.select(j1 - 1) + 1 - j1;
+      uint64_t end = level1.louds.select(j1) - j1;
+
+      for (uint64_t k = start; k < end; k ++) {
+        merged_trie->levels_[i+1].louds.add(0);
+        merged_trie->levels_[i+1].outs.add(level1.outs.get(k));
+        merged_trie->levels_[i+1].labels.push_back(level1.labels[k]);
+
+        merged_trie->n_nodes_ ++;
+        if (level1.outs.get(k) == 1) {
+          merged_trie->n_keys_ ++;
+          merged_trie->levels_[i+2].offset ++;
+        }
+
+        next_prefix1.push_back(prefix1[j1] + (char) level1.labels[k]);
+      }
+
+      merged_trie->levels_[i+1].louds.add(1);
+
+      j1 ++;
+    }
+
+    while (j2 < prefix2.size()) {
+      uint64_t start = j2 == 0 ? 0 : level2.louds.select(j2 - 1) + 1 - j2;
+      uint64_t end = level2.louds.select(j2) - j2;
+
+      for (uint64_t k = start; k < end; k ++) {
+        merged_trie->levels_[i+1].louds.add(0);
+        merged_trie->levels_[i+1].outs.add(level2.outs.get(k));
+        merged_trie->levels_[i+1].labels.push_back(level2.labels[k]);
+
+        merged_trie->n_nodes_ ++;
+        if (level2.outs.get(k) == 1) {
+          merged_trie->n_keys_ ++;
+          merged_trie->levels_[i+2].offset ++;
+        }
+
+        next_prefix2.push_back(prefix2[j2] + (char) level2.labels[k]);
+      }
+
+      merged_trie->levels_[i+1].louds.add(1);
+
+      j2 ++;
+    }
+
+    prefix1 = next_prefix1;
+    prefix2 = next_prefix2;
+
+    next_prefix1.clear();
+    next_prefix2.clear();
+  }
+
+
+  for (uint64_t i = trie1.levels_.size() - 1; i < trie2.levels_.size() - 1; i ++) {
+    Level &level2 = trie2.levels_[i+1];
+
+    uint64_t j2 = 0;
+
+    for (string &s1: prefix1) {
+      cout << s1 << " ";
+    }
+    cout << endl;
+  
+    for (string &s2: prefix2) {
+      cout << s2 << " ";
+    }
+    cout << endl;
+
+    while (j2 < prefix2.size()) {
+      uint64_t start = j2 == 0 ? 0 : level2.louds.select(j2 - 1) + 1 - j2;
+      uint64_t end = level2.louds.select(j2) - j2;
+
+      for (uint64_t k = start; k < end; k ++) {
+        merged_trie->levels_[i+1].louds.add(0);
+        merged_trie->levels_[i+1].outs.add(level2.outs.get(k));
+        merged_trie->levels_[i+1].labels.push_back(level2.labels[k]);
+
+        merged_trie->n_nodes_ ++;
+        if (level2.outs.get(k) == 1) {
+          merged_trie->n_keys_ ++;
+          merged_trie->levels_[i+2].offset ++;
+        }
+
+        next_prefix2.push_back(prefix2[j2] + (char) level2.labels[k]);
+      }
+
+      merged_trie->levels_[i+1].louds.add(1);
+
+      j2 ++;
+    }
+
+    prefix2 = next_prefix2;
+
+    next_prefix2.clear();
+  }
+
+  for (string &s1: prefix1) {
+    cout << s1 << " ";
+  }
+  cout << endl;
+
+  for (string &s2: prefix2) {
+    cout << s2 << " ";
+  }
+  cout << endl;
+
+  /*
+  for (uint64_t i = 0; i < merged_trie->levels_[merged_trie->levels_.size() - 2].outs.n_bits; i ++) {
+    merged_trie->levels_[merged_trie->levels_.size() - 1].louds.add(1);
+  }
+  */
+
+  return merged_trie;
 }
 
 void TrieImpl::build() {
@@ -371,6 +686,8 @@ void TrieImpl::extract_keys(uint64_t level_i, uint64_t node_id, string prefix, v
 
   const Level &level = levels_[level_i];
 
+  // uint64_t original_id = node_id;
+
   uint64_t node_pos;
   if (node_id != 0) {
     node_pos = level.louds.select(node_id - 1) + 1;
@@ -393,6 +710,8 @@ void TrieImpl::extract_keys(uint64_t level_i, uint64_t node_id, string prefix, v
   end += Ctz(word);
   uint64_t begin = node_id;
   end = begin + end - node_pos;
+
+  // cout << end << " " << level.louds.select(original_id) - original_id << endl;
 
   for (uint64_t i = begin; i < end; i ++) {
     string next = prefix + (char) level.labels[i];
@@ -445,12 +764,13 @@ vector<string> Trie::extract_keys() const {
   return keys;
 }
 
-Trie* merge(const Trie& trie1, const Trie& trie2) {
+Trie* merge_naive(const Trie& trie1, const Trie& trie2) {
   Trie* merged_trie = new Trie();
 
   vector<string> keys1 = trie1.extract_keys();
   vector<string> keys2 = trie2.extract_keys();
 
+  /*
   cout << "TRIE 1" << endl;
   for (string & s1: keys1) {
     cout << s1 << endl;
@@ -460,6 +780,7 @@ Trie* merge(const Trie& trie1, const Trie& trie2) {
   for (string & s2: keys2) {
     cout << s2 << endl;
   }
+  */
 
   uint64_t i = 0;
   uint64_t j = 0;
@@ -501,73 +822,17 @@ Trie* merge(const Trie& trie1, const Trie& trie2) {
     }
   }
 
-  merged_trie->build();
+  // merged_trie->build();
 
   return merged_trie;
 } 
 
-}  // namespace louds
+Trie* merge_optimal(const Trie& trie1, const Trie& trie2) {
+  Trie* merged_trie = new Trie();
 
-#include <algorithm>
-#include <cassert>
-#include <chrono>
-#include <iostream>
-#include <vector>
+  merged_trie->impl_ = TrieImpl::merge_optimal(*trie1.impl_,*trie2.impl_);
 
-// #include "louds-trie.hpp"
-
-using namespace std;
-using namespace std::chrono;
-
-int main() {
-  /*
-  louds::Trie trie;
-
-  vector<string> keys = {"car", "cat", "cap", "cot", "cop", "bap", "bat", "ba"};
-
-  sort(keys.begin(), keys.end());
-
-  for(auto & key: keys) {
-    trie.add(key);
-  }
-
-  trie.build();
-
-  trie.print();
-
-  vector<string> extracted_keys = trie.extract_keys();
-
-  for (string &s: extracted_keys) {
-    cout << s << endl;
-  }
-  */
-
-  louds::Trie trie1;
-  vector<string> keys1 = {"b", "ba", "bat", "bar"};
-  sort(keys1.begin(), keys1.end());
-
-  for(auto & key: keys1) {
-    trie1.add(key);
-  }
-
-  trie1.build();
-
-  louds::Trie trie2;
-  vector<string> keys2 = {"c", "ca", "cat", "ba", "car"};
-  sort(keys2.begin(), keys2.end());
-
-  for(auto & key: keys2) {
-    trie2.add(key);
-  }
-
-  trie2.build();
-
-  louds::Trie* trie3 = louds::merge(trie1, trie2);
-
-  vector<string> extracted_keys = trie3->extract_keys();
-
-  cout << "MERGED TRIE" << endl;
-  for (string &s: extracted_keys) {
-    cout << s << endl;
-  }
+  return merged_trie;
 }
+
+}  // namespace louds
