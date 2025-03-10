@@ -8,12 +8,15 @@ The primary logic of the merge occurs in the recursive function:
 
 ```void TrieImpl::merge_nodes(TrieImpl& trie1, TrieImpl& trie2, TrieImpl* merged_trie, uint64_t p1, bool valid1, uint64_t p2, bool valid2, uint64_t depth)```
 
-At a high level, the function recursively merges the subtrees rooted at parent index p1 for trie1 and parent index p2 for trie2 at layer depth-1, into the corect spot in merged_trie. We will refer to these root nodes as root1 and root2. If valid1 is false, we only merge trie2, and if valid2 is false, we only merge trie1.
+At a high level, the function explores the nodes of trie1 and trie2 in a lexicographical order, according to the prefix strings they represent, and merges each node into merged_trie according to this lexicographical ordering.
+
+The function works recursively. It merges the subtrees rooted at parent index p1 for trie1 and parent index p2 for trie2 at layer depth-1, into the corect spot in merged_trie. We will refer to these root nodes as root1 and root2. If valid1 is false, we only merge trie2, and if valid2 is false, we only merge trie1. The recursion starts at the first level, with parent 0 representing the empty string in both tries.
 
 The keys in trie1 and trie2 must be merged in lexicographical order, which is where most of the implementation detail lies. In particular, if a subtree in trie1 represents a prefix string lexicographically less than a subtree in trie2, we should explore the entire subtree in trie1 first and merge that subtree into merged_trie first.
 
-We maintain the invariant that root1 and root2 each correspond to the same prefix string in the respective tries in the recursive call.
-Also note that Trie1 and Trie2 are valid LOUDS tries, so at each level, the labels are in order. This allows a left to right sweep at each level.
+We maintain the invariant that root1 and root2 each correspond to the same prefix string in the respective tries in the recursive call if valid1 and valid2 are both true. This makes sure we traverse in the correct ordering. In the other cases, one of valid1 and valid2 is set to false, so in effect we are only traversing one subtree at a time.
+
+Also note that Trie1 and Trie2 are valid LOUDS tries, so at each level, the labels are in order. This allows a left to right sweep at each level to traverse in the correct lexicographical ordering.
 
 The inputs are explained as follows:
 - trie1, trie2: the LOUDS tries to be merged
