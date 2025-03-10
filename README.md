@@ -69,7 +69,7 @@ if (i1 >= end1) { // Only root2 has children left to merge, or valid1 is false
   merged_trie->n_nodes_++; // increment n_nodes
 
   merge_nodes(trie1, trie2, merged_trie, 0, false, i2, true, depth + 1);  // recurse into subtree at child node, only considering trie2
-  i2++; // go to next child node of node2 at this level
+  i2++; // go to next child node of root2 at this level
 }
 ```
 
@@ -86,7 +86,7 @@ else if (i2 >= end2) {  // Only root1 has children left to merge, or valid2 is f
   merged_trie->n_nodes_++; // increment n_nodes
 
   merge_nodes(trie1, trie2, merged_trie, i1, true, 0, false, depth + 1);  // recurse into subtree at child node, only considering trie1
-  i1++; // go to next child node of node1 at this level
+  i1++; // go to next child node of root1 at this level
 }
 ```
 
