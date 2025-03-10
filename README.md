@@ -10,9 +10,10 @@ The primary logic of the merge occurs in the recursive function:
 
 At a high level, the function recursively merges the subtrees rooted at parent index p1 for trie1 and parent index p2 for trie2 at layer depth-1, into the corect spot in merged_trie. We will refer to these root nodes as root1 and root2. If valid1 is false, we only merge trie2, and if valid2 is false, we only merge trie1.
 
-The keys in trie1 and trie2 must be merged in lexographical order, which is where most of the implementation detail lies. In particular, if a subtree in trie1 represents a prefix string lexographically less than a subtree in trie2, we should explore the entire subtree in trie1 first and merge that subtree into merged_trie first.
+The keys in trie1 and trie2 must be merged in lexicographical order, which is where most of the implementation detail lies. In particular, if a subtree in trie1 represents a prefix string lexicographically less than a subtree in trie2, we should explore the entire subtree in trie1 first and merge that subtree into merged_trie first.
 
 We maintain the invariant that root1 and root2 each correspond to the same prefix string in the respective tries in the recursive call.
+Also note that Trie1 and Trie2 are valid LOUDS tries, so at each level, the labels are in order. This allows a left to right sweep at each level.
 
 The inputs are explained as follows:
 - trie1, trie2: the LOUDS tries to be merged
@@ -54,10 +55,10 @@ Loop over children:
 
 Case 1, only root2 has children left to merge. Therefore, we explore the entire subtrees at the child nodes of root2:
 ```
-if (i1 >= end1) { // Only root2 has children left to merge
-  merged_trie->levels_[depth].louds.add(0); // add a child node in merged_trie 
-  merged_trie->levels_[depth].outs.add(level2.outs.get(i2)); // represents whether this child node is a terminal node
-  merged_trie->levels_[depth].labels.push_back(level2.labels[i2]); // represents the label of this child node
+if (i1 >= end1) { // Only root2 has children left to merge, or valid1 is false
+  merged_trie->levels_[depth].louds.add(0); // add current child node of root2 in merged_trie 
+  merged_trie->levels_[depth].outs.add(level2.outs.get(i2)); // add whether this child node is a terminal node
+  merged_trie->levels_[depth].labels.push_back(level2.labels[i2]); // add the label of this child node
   if (level2.outs.get(i2)) { // if node is a terminal node
     merged_trie->n_keys_++; // update n_keys 
     merged_trie->levels_[depth + 1].offset++; // update offset
@@ -65,16 +66,16 @@ if (i1 >= end1) { // Only root2 has children left to merge
   merged_trie->n_nodes_++; // increment n_nodes
 
   merge_nodes(trie1, trie2, merged_trie, 0, false, i2, true, depth + 1);  // recurse into subtree at child node, only considering trie2
-  i2++; // go to next child node at this level
+  i2++; // go to next child node of node2 at this level
 }
 ```
 
 Case 2, only root1 has children left to merge. Therefore, we explore the entire subtrees at the child nodes of root1:
 ```
-else if (i2 >= end2) {  // Only root1 has children left to merge
-  merged_trie->levels_[depth].louds.add(0); // add a child node in merged_trie 
-  merged_trie->levels_[depth].outs.add(level1.outs.get(i1)); // represents whether this child node is a terminal node
-  merged_trie->levels_[depth].labels.push_back(level1.labels[i1]); // represents the label of this child node
+else if (i2 >= end2) {  // Only root1 has children left to merge, or valid2 is false
+  merged_trie->levels_[depth].louds.add(0); // add current child node of root1 in merged_trie 
+  merged_trie->levels_[depth].outs.add(level1.outs.get(i1)); // add whether this child node is a terminal node
+  merged_trie->levels_[depth].labels.push_back(level1.labels[i1]); // add the label of this child node
   if (level1.outs.get(i1)) { // if node is a terminal node
     merged_trie->n_keys_++; // update n_keys 
     merged_trie->levels_[depth + 1].offset++; // update offset
@@ -82,14 +83,15 @@ else if (i2 >= end2) {  // Only root1 has children left to merge
   merged_trie->n_nodes_++; // increment n_nodes
 
   merge_nodes(trie1, trie2, merged_trie, i1, true, 0, false, depth + 1);  // recurse into subtree at child node, only considering trie1
-  i1++;
+  i1++; // go to next child node of node1 at this level
 }
 ```
 
-Case 3, the current child node in trie1 represents a prefix lexographically less than the current child node in trie2:
+Case 3, the current child node in trie1 represents a prefix lexicographically less than the current child node in trie2. 
+Therefore, we explore the entire subtrees at the child nodes of root1:
 ```
 // note that we maintain that root1 and root2 represent the same prefix string, so this condition means that the current child node in
-trie1 represents a prefix lexographically less than the current child node in trie2
+trie1 represents a prefix lexicographically less than the current child node in trie2
 else if (level1.labels[i1] < level2.labels[i2]) {
    // logic same as previous case
    merged_trie->levels_[depth].louds.add(0); 
@@ -106,7 +108,7 @@ else if (level1.labels[i1] < level2.labels[i2]) {
  }
 ```
 
-Case 4, the current child node in trie2 represents a prefix lexographically less than the current child node in trie1:
+Case 4, the current child node in trie2 represents a prefix lexigraphically less than the current child node in trie1:
 
 ```
 // This is just the reverse of Case 3
@@ -125,7 +127,7 @@ else if (level1.labels[i1] > level2.labels[i2]) {
 }
 ```
 
-Case 5, the current child node in trie1 and current child node in trie2 represent the same prefix string, so we recurse:
+Case 5, the current child node in trie1 and current child node in trie2 represent the same prefix string, so we recurse into both:
 ```
 // level1.labels[i1] == level2.labels[i2], so prefixes match
  else {
@@ -237,7 +239,7 @@ void TrieImpl::merge_nodes(TrieImpl& trie1, TrieImpl& trie2, TrieImpl* merged_tr
 }
 ```
 
-The top level function just starts at the root node:
+To begin the recursion, we start at level 1, with parent node 0 for each trie:
 ```
 TrieImpl* TrieImpl::merge_efficient(TrieImpl& trie1, TrieImpl& trie2) {
   TrieImpl* merged_trie = new TrieImpl(false);
